@@ -10,7 +10,6 @@ A minimal Node.js starter project.
    ```
 2. Configure your API key in `.env`:
    ```env
-   API_KEY=your-secret-api-key
    ```
 3. Run the app:
    ```bash
