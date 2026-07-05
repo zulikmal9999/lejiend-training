@@ -17,12 +17,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create archive (tar.gz)
+      - name: Create archive (git archive)
         run: |
           BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
-          git checkout "$BRANCH"
-          # Exclude node_modules, .git, and workflow files
-          tar --exclude='./.git' --exclude='./node_modules' --exclude='./.github/workflows/deploy.yml' -czf deploy.tar.gz .
+          echo "Packaging branch: $BRANCH"
+          # Try to fetch the branch from origin so we can archive a clean, committed tree
+          git fetch origin "$BRANCH" --depth=1 || true
+          # Prefer archiving the remote ref if available to avoid local changes
+          git archive --format=tar.gz -o deploy.tar.gz "origin/${BRANCH}" || git archive --format=tar.gz -o deploy.tar.gz "${BRANCH}"
+
+      - name: Verify archive exists
+        run: |
+          if [ -f deploy.tar.gz ]; then
+            echo "deploy.tar.gz created";
+            ls -lh deploy.tar.gz;
+          else
+            echo "deploy.tar.gz missing:";
+            ls -la || true;
+            exit 1;
+          fi
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.8.0
