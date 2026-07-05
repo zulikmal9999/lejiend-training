@@ -100,10 +100,10 @@ jobs:
         run: |
           set -euo pipefail
           PORT_FLAG=""
-          if [ -n "${SSH_PORT:-}"; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
           REMOTE_ARCHIVE="${DEPLOY_PATH}/deploy.tar.gz"
-          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << 'EOF'
+          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << EOF
             set -e
             if [ ! -f "${REMOTE_ARCHIVE}" ]; then
               echo "ERROR: remote archive not found: ${REMOTE_ARCHIVE}"
