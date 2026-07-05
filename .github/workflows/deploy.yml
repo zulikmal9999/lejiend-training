@@ -11,6 +11,11 @@ on:
 jobs:
   deploy-zip:
     runs-on: ubuntu-latest
+    env:
+      SSH_USER: ${{ secrets.SSH_USER || vars.SSH_USER }}
+      SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
+      SSH_PORT: ${{ secrets.SSH_PORT || vars.SSH_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/home/ubuntu/application' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,24 +47,30 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.GH_SECRET_KEY }}
 
+      - name: Debug SSH variables
+        run: |
+          echo "SSH_USER env=${SSH_USER}"
+          echo "SSH_HOST env=${SSH_HOST}"
+          echo "SSH_PORT env=${SSH_PORT}"
+          echo "DEPLOY_PATH env=${DEPLOY_PATH}"
+          echo "SSH_USER expr=${{ secrets.SSH_USER || vars.SSH_USER }}"
+          echo "SSH_HOST expr=${{ secrets.SSH_HOST || vars.SSH_HOST }}"
+          echo "SSH_PORT expr=${{ secrets.SSH_PORT || vars.SSH_PORT }}"
+          echo "DEPLOY_PATH expr=${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/home/ubuntu/application' }}"
+
       - name: Add remote host to known_hosts (optional)
         run: |
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+          if [ -z "${SSH_HOST}" ]; then
             echo "SSH_HOST not set — skipping ssh-keyscan (will use SSH options to skip host checks)"
           else
-            if [ -z "${{ secrets.SSH_PORT }}" ]; then
-              ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts || true
+            if [ -z "${SSH_PORT}" ]; then
+              ssh-keyscan -H ${SSH_HOST} >> ~/.ssh/known_hosts || true
             else
-              ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts || true
+              ssh-keyscan -p ${SSH_PORT} -H ${SSH_HOST} >> ~/.ssh/known_hosts || true
             fi
           fi
 
       - name: Ensure deploy directory exists on server
-        env:
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
@@ -67,11 +78,6 @@ jobs:
           ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
 
       - name: Copy archive to server
-        env:
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-P ${SSH_PORT}"; fi
@@ -79,11 +85,6 @@ jobs:
           scp $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
 
       - name: Extract, install, and start on server
-        env:
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           set -euo pipefail
           PORT_FLAG=""
