@@ -93,20 +93,26 @@ jobs:
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-P ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          scp -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
+          REMOTE_ARCHIVE="${DEPLOY_PATH}/deploy.tar.gz"
+          scp -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${REMOTE_ARCHIVE}
 
       - name: Extract, install, and start on server
         run: |
           set -euo pipefail
           PORT_FLAG=""
-          if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          if [ -n "${SSH_PORT:-}"; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
+          REMOTE_ARCHIVE="${DEPLOY_PATH}/deploy.tar.gz"
           ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << 'EOF'
             set -e
-            cd "${DEPLOY_PATH}"
+            if [ ! -f "${REMOTE_ARCHIVE}" ]; then
+              echo "ERROR: remote archive not found: ${REMOTE_ARCHIVE}"
+              ls -la "${DEPLOY_PATH}"
+              exit 1
+            fi
             # Extract into deploy path (overwrite files)
-            tar -xzf deploy.tar.gz -C "${DEPLOY_PATH}"
-            rm -f deploy.tar.gz
+            tar -xzf "${REMOTE_ARCHIVE}" -C "${DEPLOY_PATH}"
+            rm -f "${REMOTE_ARCHIVE}"
             # Install dependencies
             npm install --production
             # Start the app using nohup
