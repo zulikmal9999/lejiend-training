@@ -42,10 +42,16 @@ jobs:
             exit 1;
           fi
 
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.GH_SECRET_KEY }}
+      - name: Configure SSH private key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GH_SECRET_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          cat > ~/.ssh/config <<'EOF'
+          Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
 
       - name: Debug SSH variables
         run: |
@@ -75,14 +81,14 @@ jobs:
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
+          ssh -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
 
       - name: Copy archive to server
         run: |
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-P ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          scp $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
+          scp -i ~/.ssh/id_rsa $PORT_FLAG deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
 
       - name: Extract, install, and start on server
         run: |
@@ -90,7 +96,7 @@ jobs:
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} << 'EOF'
+          ssh -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << 'EOF'
             set -e
             cd "${DEPLOY_PATH}"
             # Extract into deploy path (overwrite files)
