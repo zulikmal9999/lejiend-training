@@ -103,21 +103,7 @@ jobs:
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
           REMOTE_ARCHIVE="${DEPLOY_PATH}/deploy.tar.gz"
-          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << EOF
-            set -e
-            if [ ! -f "${REMOTE_ARCHIVE}" ]; then
-              echo "ERROR: remote archive not found: ${REMOTE_ARCHIVE}"
-              ls -la "${DEPLOY_PATH}"
-              exit 1
-            fi
-            # Extract into deploy path (overwrite files)
-            tar -xzf "${REMOTE_ARCHIVE}" -C "${DEPLOY_PATH}"
-            rm -f "${REMOTE_ARCHIVE}"
-            # Install dependencies
-            npm install --production
-            # Start the app using nohup
-            nohup npm start > app.log 2>&1 &
-          EOF
+          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} "set -e; if [ ! -f '${REMOTE_ARCHIVE}' ]; then echo 'ERROR: remote archive not found: ${REMOTE_ARCHIVE}'; ls -la '${DEPLOY_PATH}'; exit 1; fi; tar -xzf '${REMOTE_ARCHIVE}' -C '${DEPLOY_PATH}'; rm -f '${REMOTE_ARCHIVE}'; cd '${DEPLOY_PATH}'; npm install --production; nohup npm start > app.log 2>&1 &"
 
       - name: Cleanup archive locally
         if: always()
