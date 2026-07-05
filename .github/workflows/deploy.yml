@@ -1,36 +1,69 @@
-name: CD Deploy
+name: CD Deploy (zip)
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to package and deploy'
+        required: false
+        default: 'main'
 
 jobs:
-  deploy:
+  deploy-zip:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          fetch-depth: 0
+
+      - name: Create archive (tar.gz)
+        run: |
+          BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+          git checkout "$BRANCH"
+          # Exclude node_modules, .git, and workflow files
+          tar --exclude='./.git' --exclude='./node_modules' --exclude='./.github/workflows/deploy.yml' -czf deploy.tar.gz .
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.GH_SECRET_KEY }}
 
-      - name: Add remote host to known_hosts
+      - name: Add remote host to known_hosts (optional)
         run: |
-          if [ -z "${{ secrets.SSH_PORT }}" ]; then
-            ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "SSH_HOST not set — skipping ssh-keyscan (will use SSH options to skip host checks)"
           else
-            ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+            if [ -z "${{ secrets.SSH_PORT }}" ]; then
+              ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts || true
+            else
+              ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts || true
+            fi
           fi
 
-      - name: Deploy to server
+      - name: Ensure deploy directory exists on server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          PORT_FLAG=""
+          if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
+
+      - name: Copy archive to server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          PORT_FLAG=""
+          if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-P ${SSH_PORT}"; fi
+          scp $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
+
+      - name: Extract, install, and start on server
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -43,8 +76,16 @@ jobs:
           ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} << 'EOF'
             set -e
             cd "${DEPLOY_PATH}"
-            git fetch --all
-            git reset --hard origin/${{ github.ref_name }}
+            # Extract into deploy path (overwrite files)
+            tar -xzf deploy.tar.gz -C "${DEPLOY_PATH}"
+            rm -f deploy.tar.gz
+            # Install dependencies
             npm install --production
+            # Start the app using nohup
             nohup npm start > app.log 2>&1 &
           EOF
+
+      - name: Cleanup archive locally
+        if: always()
+        run: |
+          rm -f deploy.tar.gz
