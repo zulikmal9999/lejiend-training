@@ -1,0 +1,50 @@
+name: CD Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.GH_SECRET_KEY }}
+
+      - name: Add remote host to known_hosts
+        run: |
+          if [ -z "${{ secrets.SSH_PORT }}" ]; then
+            ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy to server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          PORT_FLAG=""
+          if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
+          ssh $PORT_FLAG -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${SSH_USER}@${SSH_HOST} << 'EOF'
+            set -e
+            cd "${DEPLOY_PATH}"
+            git fetch --all
+            git reset --hard origin/${{ github.ref_name }}
+            npm install --production
+            nohup npm start > app.log 2>&1 &
+          EOF
