@@ -16,6 +16,7 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST || vars.SSH_HOST }}
       SSH_PORT: ${{ secrets.SSH_PORT || vars.SSH_PORT }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || vars.DEPLOY_PATH || '/home/ubuntu/application' }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY || secrets.SSH_KEY || secrets.GH_SECRET_KEY || vars.SSH_PRIVATE_KEY || vars.SSH_KEY || vars.GH_SECRET_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,13 +46,17 @@ jobs:
       - name: Configure SSH private key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.GH_SECRET_KEY }}" > ~/.ssh/id_rsa
+          printf '%s\n' "${{ env.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          cat > ~/.ssh/config <<'EOF'
-          Host *
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-          EOF
+          printf '%s\n' 'Host *' '  StrictHostKeyChecking no' '  UserKnownHostsFile /dev/null' > ~/.ssh/config
+
+      - name: Validate SSH private key
+        run: |
+          if [ ! -s ~/.ssh/id_rsa ]; then
+            echo "ERROR: SSH_PRIVATE_KEY is empty or missing."
+            exit 1
+          fi
+          echo "SSH private key file written: $(stat -c%s ~/.ssh/id_rsa) bytes"
 
       - name: Debug SSH variables
         run: |
@@ -81,14 +86,14 @@ jobs:
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          ssh -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
+          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} "mkdir -p '${DEPLOY_PATH}' && chown -R ${SSH_USER}:${SSH_USER} '${DEPLOY_PATH}' || true"
 
       - name: Copy archive to server
         run: |
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-P ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          scp -i ~/.ssh/id_rsa $PORT_FLAG deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
+          scp -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG deploy.tar.gz ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/deploy.tar.gz
 
       - name: Extract, install, and start on server
         run: |
@@ -96,7 +101,7 @@ jobs:
           PORT_FLAG=""
           if [ -n "${SSH_PORT:-}" ]; then PORT_FLAG="-p ${SSH_PORT}"; fi
           DEPLOY_PATH="${DEPLOY_PATH:-/home/ubuntu/application}"
-          ssh -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << 'EOF'
+          ssh -o IdentitiesOnly=yes -i ~/.ssh/id_rsa $PORT_FLAG ${SSH_USER}@${SSH_HOST} << 'EOF'
             set -e
             cd "${DEPLOY_PATH}"
             # Extract into deploy path (overwrite files)
